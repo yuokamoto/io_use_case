@@ -15,7 +15,7 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
     python-wheel \
     python-snappy
 
-RUN pip install minio -y
+RUN pip install minio
 
 RUN git clone -b cleanup https://github.com/yuokamoto/io_use_case.git /ros/ws/src/io_tutorials
 
