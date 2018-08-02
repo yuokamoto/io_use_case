@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>img_uploader</name>
+  <version>0.0.1</version>
+  <description>Upload image to minio server</description>
+
+  <maintainer email="yu.okamoto@rapyuta-robotics.com">Yu Okamoto</maintainer>
+
+  <license>Commercial</license>
+
+  <depend>rospy</depend>
+  <depend>std_srvs</depend>
+  <depend>sensor_msgs</depend>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+</package>
