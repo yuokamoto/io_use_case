@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
     ros-kinetic-roslaunch \
     build-essential \
     ros-kinetic-actionlib-msgs \
+    ros-kinetic-image-view \
     python-pip \
     python-wheel \
     python-snappy
