@@ -32,4 +32,4 @@ RUN /bin/bash -c "source /opt/ros/kinetic/setup.bash \
 
 COPY ros_entrypoint.sh .
 
-ENTRYPOINT ["bash"]
+ENTRYPOINT ["/ros_entrypoint.sh"]
