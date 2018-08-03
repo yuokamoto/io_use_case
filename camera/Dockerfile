@@ -30,6 +30,6 @@ RUN /bin/bash -c "source /opt/ros/kinetic/setup.bash \
     && chgrp -R root /ros \
     && chmod -R g+rwx /ros"
 
-COPY ros_entrypoint.sh .
+COPY camera/ros_entrypoint.sh .
 
 ENTRYPOINT ["/ros_entrypoint.sh"]
