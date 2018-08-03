@@ -17,7 +17,7 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
 
 RUN pip install minio
 
-RUN git clone -b cleanup https://github.com/yuokamoto/io_use_case.git /ros/ws/src/io_use_case
+RUN git clone https://yuokamoto:e95fa0fce68dc3d077f5a2bbaba88e8e4fa4bfbc@github.com/yuokamoto/io_use_case.git /ros/ws/src/io_use_case
 
 RUN /bin/bash -c "source /opt/ros/kinetic/setup.bash \
     && cd /ros/ws/src \
