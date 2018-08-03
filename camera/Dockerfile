@@ -17,7 +17,7 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
 
 RUN pip install minio
 
-RUN git clone -b cleanup https://github.com/yuokamoto/io_use_case.git /ros/ws/src/io_tutorials
+RUN git clone -b cleanup https://github.com/yuokamoto/io_use_case.git /ros/ws/src/io_use_case
 
 RUN /bin/bash -c "source /opt/ros/kinetic/setup.bash \
     && cd /ros/ws/src \
@@ -32,4 +32,4 @@ RUN /bin/bash -c "source /opt/ros/kinetic/setup.bash \
 
 COPY ros_entrypoint.sh .
 
-ENTRYPOINT ["/ros_entrypoint.sh"]
+ENTRYPOINT ["bash"]
