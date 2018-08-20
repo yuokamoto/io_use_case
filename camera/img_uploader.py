@@ -58,7 +58,7 @@ class ImgUploader(object):
 		- upload saved image to the minio server
 		'''
 		rospy.loginfo('callback function')
-		file_name = str(datetime.now())+'png'
+		file_name = str(datetime.now())+'.png'
 
 		# ros service call
 		# http://wiki.ros.org/ROS/Tutorials/WritingServiceClient%28python%29
@@ -73,6 +73,9 @@ class ImgUploader(object):
 		# Put an object to the cloud file server.
 		try:
 			rospy.loginfo('upload image'+file_name)
+			import os, io
+			rospy.loginfo(os.getcwd())
+			rospy.loginfo(io.open(self._img_name, mode='rb'))
 			self.minioClient.fput_object('img', file_name, self._img_name)
 		except ResponseError as err:
 			print(err)
