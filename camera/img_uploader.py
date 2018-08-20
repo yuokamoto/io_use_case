@@ -75,7 +75,7 @@ class ImgUploader(object):
 			rospy.loginfo('upload image'+file_name)
 			import os, io
 			rospy.loginfo(os.getcwd())
-			rospy.loginfo(io.open(self._img_name, mode='rb'))
+			rospy.loginfo(open(self._img_name, mode='rb'))
 			self.minioClient.fput_object('img', file_name, self._img_name)
 		except ResponseError as err:
 			print(err)
