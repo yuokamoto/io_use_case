@@ -24,14 +24,14 @@ class ImgUploader(object):
 		rospy.loginfo('ros node initialize')
 		rospy.init_node('img_uploader', anonymous=True)
 		self._img_upload_period = rospy.get_param('~img_upload_period', 600)
-		self._img_name = rospy.get_param('~img_name', '/home/ubuntu/img_to_be_upload.png')
+		self._img_name = rospy.get_param('~img_name', '/img/img_to_be_upload.png')
 		self._minio_ep = rospy.get_param('~server_ep', 'localhost:443')
 
 		# minio python client
 		rospy.loginfo('setup minio client')
 		# remove scheme
 		self._minio_ep = self._minio_ep.split('//')[1]
-		rospy.loginfo(self._minio_ep)
+		rospy.loginfo('file server url:'+self._minio_ep)
 
 		self.minioClient = Minio(self._minio_ep,
 		              access_key='rapyuta123',
@@ -68,21 +68,15 @@ class ImgUploader(object):
 			save_img()
 			rospy.loginfo('Service_called')
 		except rospy.ServiceException, e:
-			print "Service call failed: %s"%e
+			rospy.logerr('Service call failed:' + e)
 
 		# Put an object to the cloud file server.
 		try:
-			rospy.loginfo('upload image'+file_name)
-			
-			import os, io
-			rospy.loginfo(os.getcwd())
-			rospy.sleep(30)
-			rospy.loginfo(os.listdir('/'))
-			rospy.loginfo(os.listdir('/img'))
-
+			rospy.loginfo('upload image:'+file_name)			
+			rospy.sleep(5) # wait for save image
 			self.minioClient.fput_object('img', file_name, self._img_name)
 		except ResponseError as err:
-			print(err)
+			rospy.logerr('File upload failed:' + err)
 
 
 if __name__ == '__main__':
