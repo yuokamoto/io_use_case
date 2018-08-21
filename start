@@ -1,0 +1,373 @@
+#!/bin/bash
+
+STARTTIME="$(date -u +%s)"
+
+DOCKER_PY_VER="3.1.3"
+DOCKER_COMPOSE_VER="1.21.0"
+IS_ROS=false
+SALT_GRAINS="/etc/salt/grains"
+RUNTIME="preinstalled"
+CATKIN_WS=""
+SALT_WHL="https://storage.googleapis.com/artifacts.rapyuta.io/salt-2017.7.0-py2-none-any.whl"
+KEYSERVER="hkp://p80.pool.sks-keyservers.net:80"
+DOCKER_GPG_KEY="9DC858229FC7DD38854AE2D88D81803C0EBFCD88"
+ERR_LOG_FILE="/tmp/rapyuta_error_log"
+INSTALL_LOG_FILE="/tmp/rapyuta_install_log"
+OS="ubuntu"
+LSB_RELEASE="xenial"
+DOCKER_CE_PKG="17.12.1~ce-0~$OS"
+
+CPUARCH=$(uname -m)
+
+declare -a jobs=("install_salt")
+declare -A grains
+
+function log_command() {
+  $@ 1>> $INSTALL_LOG_FILE 2>> $ERR_LOG_FILE
+}
+
+function print_progress_bar(){
+  ch='#'
+  size=10
+  b=$(( $1 / $size ))
+  printf '%*s' "$b" | tr ' ' "$ch"
+  printf '%*s' "$((size - b))"
+  printf '(%d%%)\r' $1
+}
+
+function run_jobs() {
+  for job in ${jobs[@]}
+  do
+  	$job
+  done
+}
+
+function print_rr_banner() {
+    echo 'IF9fX18gICAgICAgICAgICAgICAgICAgICAgICAgXyAgICAgICAgICBfX19fICAgICAgIF8gICAgICAgICAgIF8gICBfICAgICAgICAgIA0KfCAgXyBcIF9fIF8gXyBfXyAgXyAgIF8gXyAgIF98IHxfIF9fIF8gIHwgIF8gXCBfX18gfCB8X18gICBfX18gfCB8XyhfKSBfX18gX19fIA0KfCB8XykgLyBfYCB8ICdfIFx8IHwgfCB8IHwgfCB8IF9fLyBfYCB8IHwgfF8pIC8gXyBcfCAnXyBcIC8gXyBcfCBfX3wgfC8gX18vIF9ffA0KfCAgXyA8IChffCB8IHxfKSB8IHxffCB8IHxffCB8IHx8IChffCB8IHwgIF8gPCAoXykgfCB8XykgfCAoXykgfCB8X3wgfCAoX19cX18gXA0KfF98IFxfXF9fLF98IC5fXy8gXF9fLCB8XF9fLF98XF9fXF9fLF98IHxffCBcX1xfX18vfF8uX18vIFxfX18vIFxfX3xffFxfX198X19fLw0KICAgICAgICAgICB8X3wgICAgfF9fXy8gICAgICAgICAgICAgICAgDQoNCg==' | base64 -d
+}
+
+
+function run_as_sudoer() {
+  [ "$UID" -eq 0 ] || exec sudo "$0" "$@"
+}
+
+function update_grains() {
+    log_command touch $SALT_GRAINS
+    for key in ${!grains[@]}; do
+        echo ${key}: ${grains[${key}]} >> $SALT_GRAINS
+    done
+}
+
+function add_grains() {
+  key=$1
+  value=$2
+  grains[$key]+=$value
+}
+
+function check_running_deployment() {
+  EXECUTABLES=$(docker ps -q --filter name=inst-* 2> /dev/null)
+  if [ ! -z $EXECUTABLES ]; then
+    echo "Deployments are still running for this device. Deprovision them and try again."
+    exit -1
+  fi
+
+  if [ -d /opt/rapyuta ]; then
+    if supervisorctl status all 2> /dev/null | grep -q "RUNNING"; then
+      echo "Deployments are still running for this device. Deprovision them and try again."
+      exit -1
+    fi
+  fi
+}
+
+function check_deps () {
+  deps="python-crypto python-pip python-zmq python-dateutil python-psutil"
+  if [ "$RUNTIME" == "dockercompose" ]; then
+    deps+=" python-docker"
+  fi
+  for dep in $deps ; do
+    dpkg-query -W -f='${Package}\n' | grep ^$dep$ > /dev/null 2>&1
+    if [ $? != 0 ]; then
+      log_command apt-get install -y $dep
+    fi
+  done
+}
+
+function check_python_minimum_version() {
+    python_newer=$(python -c "import platform;from distutils.version import StrictVersion;print(platform.python_version() >= StrictVersion('2.7.9'))")
+    if [[ $python_newer != "True" ]]; then
+      echo -ne "Installed python version $PYTHON_VERSION is less than the required version of 2.7.9. \n\n"
+      echo -ne "Please upgrade python before continuing. \n\n"
+      exit -1;
+    fi
+}
+
+function check_init_manger() {
+    init=`strings /sbin/init |
+      awk 'match($0, /(upstart|systemd|sysvinit)/) { print tolower(substr($0, RSTART, RLENGTH));exit; }'`
+
+    if [ $init == $1 ]; then
+        return 1
+    else
+        return 0
+    fi
+} # e.g.: check_init_manager systemd
+
+function set_ros_workspace() {
+  if ! [[ -z $CATKIN_WS ]]; then
+    if ! [[ -d $CATKIN_WS ]]; then
+      echo "Directory $CATKIN_WS not found."
+      echo "To set default catkin workspace. Use: bash $0 -w <path-to-catkin_ws>"
+      exit -1
+    fi
+    add_grains "ros_workspace" $CATKIN_WS
+  fi
+}
+
+function add_docker_gpg_key() {
+  log_command apt-key adv --keyserver $KEYSERVER --recv-keys $DOCKER_GPG_KEY
+}
+
+function add_docker_deb_repo() {
+  if [ "$CPUARCH" == "x86_64" ]; then
+    ARCH="amd64"
+  elif [ "$CPUARCH" == "aarch64" ]; then
+    ARCH="arm64"
+  else
+    # FIXME:
+    ARCH="armhf"
+  fi
+  cat <<EOM >/etc/apt/sources.list.d/docker-ce.list
+deb [arch=$ARCH] https://download.docker.com/linux/$OS $LSB_RELEASE stable
+EOM
+  pre_reqs="apt-transport-https ca-certificates curl"
+  log_command apt-get install -y -qq $pre_reqs
+  add_docker_gpg_key
+}
+
+function install_docker() {
+  add_docker_deb_repo
+  log_command apt-get update
+  print_progress_bar 60
+  if ! $(log_command apt-get -y install docker-ce=$DOCKER_CE_PKG); then
+      echo -ne 'Unable to install docker-ce. Aborting.. \n\n'
+      exit -1;
+  fi
+  log_command apt-mark hold docker-ce
+}
+
+function install_docker_py() {
+  if ! $(log_command pip install "docker==$DOCKER_PY_VER"); then
+      echo -ne 'Unable to install docker_py version:$DOCKER_PY_VER. Aborting.. \n\n'
+      exit -1;
+  fi
+}
+
+function install_docker_compose() {
+  if ! $(log_command pip install "docker_compose==$DOCKER_COMPOSE_VER"); then
+      echo -ne 'Unable to install docker_compose version:$DOCKER_COMPOSE_VER. Aborting.. \n\n'
+      exit -1;
+  fi
+}
+
+function add_rapyuta_image_token_in_grain() {
+    add_grains "rapyuta_registry_token" dW51c2VkOmV5SmhiR2NpT2lKU1V6STFOaUlzSW5SNWNDSTZJa3BYVkNKOS5leUpwYzNNaU9pSnJkV0psY201bGRHVnpMM05sY25acFkyVmhZMk52ZFc1MElpd2lhM1ZpWlhKdVpYUmxjeTVwYnk5elpYSjJhV05sWVdOamIzVnVkQzl1WVcxbGMzQmhZMlVpT2lKeWFXOHRaM0p3TFc1ekxXbHZMWFZ6WlMxallYTmxJaXdpYTNWaVpYSnVaWFJsY3k1cGJ5OXpaWEoyYVdObFlXTmpiM1Z1ZEM5elpXTnlaWFF1Ym1GdFpTSTZJbkp5TFdSbGRtbGpaUzFsTmpnME0yRTJZeTFqTjJJNExUUXpZbVF0T0RnMll5MW1OV016TW1ZNE1EVm1PVEFpTENKcmRXSmxjbTVsZEdWekxtbHZMM05sY25acFkyVmhZMk52ZFc1MEwzTmxjblpwWTJVdFlXTmpiM1Z1ZEM1dVlXMWxJam9pY21Gd2VYVjBZUzFwYldGblpTMXdkV3hzWlhJaUxDSnJkV0psY201bGRHVnpMbWx2TDNObGNuWnBZMlZoWTJOdmRXNTBMM05sY25acFkyVXRZV05qYjNWdWRDNTFhV1FpT2lJMVpHVXlOVFptWkMwNU5UazFMVEV4WlRndFlUSTNNaTAwTWpBeE1HRTVNakF3TURnaUxDSnpkV0lpT2lKemVYTjBaVzA2YzJWeWRtbGpaV0ZqWTI5MWJuUTZjbWx2TFdkeWNDMXVjeTFwYnkxMWMyVXRZMkZ6WlRweVlYQjVkWFJoTFdsdFlXZGxMWEIxYkd4bGNpSjkucGI5WFZiNWREZ1JZUFBNSGxHMzBrLU5JcTVDb3JMcllBU3M3SF84YzAxWTd4ak5sT3o4YmRSdGJJWnFmaXJvb1pibnNNWUM3eVRvSlVGdlVTWTFLYWMtQnVkclVGMzRlVUFwYnE3Q3VINnBwZlhOY1lrRklnX3ZXVnplaEhHSWt0SE5lS01VTXFaaGJ5ZkxVYW9zNHplMnB1cnV1TEFKSnpfU3owaGFqeGxBaUhSQXdZRXdIeTVJYmxha1FuSzRLTV90MXdxdTVZWDVQc0lDdnVINzBLWDJZekVHRVNoWmE0T081MW9WVmhDUUNfX1RXal9Yd0tPbHFLUGtaLWNUNzRSbDdYcnA2NXpqRlp3OWdfcTNNXzRObFh4VEp3X1FoOTUyYzJ2V1NMTXpNN3pZazZUTG9IWlhENm1Sa0dTb1ZGeVhoT2hNbi1lOE91cVFBOVRiSHpB
+}
+
+function install_docker_runtime() {
+  install_docker
+  print_progress_bar 80
+  install_docker_py
+  print_progress_bar 90
+  install_docker_compose
+}
+
+function install_salt_service() {
+  ## Install service file
+  if ! systemctl list-unit-files | log_command grep salt-minion.service; then {
+      cat > /etc/systemd/system/rapyuta-agent.service <<- EOM
+      [Unit]
+      Description=Rapyuta Agent
+      After=network.target
+      Wants=dmclient.service telegraf.service supervisor.service
+      [Service]
+      Type=simple
+      NotifyAccess=all
+      LimitNOFILE=8192
+      Restart=on-failure
+      ExecStart=/usr/local/bin/salt-minion -l debug
+
+      [Install]
+      WantedBy=multi-user.target
+EOM
+  } fi
+}
+
+function add_salt_config_and_keys() {
+    mkdir -p /etc/salt/pki/minion/ &&  mkdir -p /etc/salt/minion.d && mkdir -p /etc/rapyuta
+    mkdir -p /var/log/rapyuta/deployments && mkdir -p /opt/rapyuta/supervisor
+    ## Write the config files
+    cat  > /etc/salt/pki/minion/minion.pem <<- EOM
+-----BEGIN RSA PRIVATE KEY-----
+MIIEpQIBAAKCAQEAqrcoFMw5jBNL5O1hv0BHsOxpoC5GRtKbtGmnpGLfDuVUYH92
+cuIXF0iKeonxIO/txBSUiTczpvkDvFNq0s8RneeEgZj4TvuqlWAgRPk9ZKXo/6fE
+vnQL3vb//Z9x30fY8OaX1jFLyyP0Q203/f7XrZkfYE8kioAsDaD95HwGrudwbTlj
+TECkq0E6jGsBCQnxKoR6/2nYXkS8VlqY25oCYvDwCNsU8ddc2UoDCjLAmCsHJNVf
+rIfap+tzm8H038aMhzRWzZ2qxQSB/ezXBeRbbXkGe2q4ZzDpuvRuDvrxRnEN45BH
+hUJPbisOx0jih1Muiuj77uo/B26VKx6ZIHyaJwIDAQABAoIBAQCJV4MKgGcH13pm
+ecf66ocCwqATu0bUsZmM4rd5XAXiYQOqAsHTmStEkxq9jP6OJhjeeEQrxFpsyceE
+moPFh8u/gsQq01tph7TsKgKsGuyWbZfvHhT9uDTYs1StwboGDTJuVMXxD4XPr2RT
+Xqn+USlJQ3hnriRSvN00NcItMM7bpIxiX30zqnXhnabZVa8zJU7lZ2k/Fk9suMp5
+pBziiMSQ7oKMd+JZcjXtzWSWNvuYq60fEgQHa7voGDmE+4//zmVM3J5pbwH++oCG
+Gcf3qRMQdRdYGEtFK1I/lY87O6nwMJ8d5Fsz5jYq7MxSgYj/r1Iz4/iwTzG2dDsQ
+i1rCQACpAoGBAMt+otXQYpdM7zydv0pToN5gV1+9B1fO+4FAegq3Pej9m+QDNi67
+FxjfHtfMRI0GxKSYNLTsBQlHvBQbmeB0XXbs209AxEc+vl46KghFgYav6ph0Eq6c
+oemIXMDoB89zF9Xy6uvJv/WwKeC2BItyu9jw51ywJBbFjOmoIiAKmESrAoGBANbD
+Xbj1TBoFbOSxsH5gmBt2fgDyEbdCohLYyK3ET/IZC0lZuQGcdrWkQsOhRg98BTcY
+SsAjSQITdutBxPUNUO2oDNAwWiRGBTJQN0mzwwlxaxpem0iUK6wVXTB4yGim2KHH
+rcRzvCOUax5KdE8Spb7mM3Ry0cfrJ6weo1Thf6h1AoGAdamFcegJ+b4MXpo/rzRn
+we0m2D6ubkFJ/1ROvL9zVrK9XrvUqnSXSFRKuzBrOrf9H8a6QxptVw5ZW68R7Eyc
+dlVCAbNLSn6nCEjNYPb/i+dP2FLVMo1yuVuVdh0z1umPkK/i0e9XxTHVJQ9Z1V/D
+6g5xWJCobVpQvhHvmWNG4/0CgYEAmJHGHUW2QK4mA/nv5nf811XAgi92QnjF5xm2
+xyu1l8oO6JcjBXAALV56R7xkp0917QQG5qSqkxz82Hiq0WQaYBuIrsYK48YSnwG5
+pVRddHHsopkfO9p3hBLRV0QXK7GMKLJQUkXeHHCuAKDoK9yVfx7O4yVGvv3h+zbw
+1bY1GJkCgYEAn66EkajCJrrgxhgYSRXSTC5MKcbUJeKq87gSFJEtK3cOFHhT+oAb
+mYmTfqBfui7l9xnrOgvXE6eQjFaflDkQkIQ7qzJNrNjdQJJ0EXiwVb64CKM/nayN
+aWWOg7DlCQ8ytwVkkbRkgCBKurUBfqRzo9hoW2BFNJ2mD81/3YcBcCE=
+-----END RSA PRIVATE KEY-----
+EOM
+    cat > /etc/salt/pki/minion/minion.pub  <<- EOM
+-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqrcoFMw5jBNL5O1hv0BH
+sOxpoC5GRtKbtGmnpGLfDuVUYH92cuIXF0iKeonxIO/txBSUiTczpvkDvFNq0s8R
+neeEgZj4TvuqlWAgRPk9ZKXo/6fEvnQL3vb//Z9x30fY8OaX1jFLyyP0Q203/f7X
+rZkfYE8kioAsDaD95HwGrudwbTljTECkq0E6jGsBCQnxKoR6/2nYXkS8VlqY25oC
+YvDwCNsU8ddc2UoDCjLAmCsHJNVfrIfap+tzm8H038aMhzRWzZ2qxQSB/ezXBeRb
+bXkGe2q4ZzDpuvRuDvrxRnEN45BHhUJPbisOx0jih1Muiuj77uo/B26VKx6ZIHya
+JwIDAQAB
+-----END PUBLIC KEY-----
+EOM
+    cat > /etc/salt/minion.d/rr_minion.conf  <<- EOM
+master: closed-betamaster.cb01.rapyuta.io
+id: e6843a6c-c7b8-43bd-886c-f5c32f805f90
+grains:
+  device_name: yu_gazilla
+  tenant_id: GROUP-io-use-case
+  emqtt_server: ssl://closed-betaemqtt.ep.rapyuta.io:443
+  emqtt_password: 703GN86SA7WH
+
+startup_states: 'highstate'
+ext_job_cache: 'highstate_complete'
+
+log_level_logfile: debug
+
+# reconnect configuration
+master_tries: -1
+auth_tries: 10
+ping_interval: 60
+
+retry_dns: 0
+
+#tcp keepalive
+tcp_keepalive: True
+tcp_keepalive_idle: 30
+tcp_keepalive_cnt: 3
+tcp_keepalive_intvl: 10
+EOM
+    sed -i "/device_name:.*/a \ \ user: $(whoami)" /etc/salt/minion.d/rr_minion.conf
+}
+
+function install_salt() {
+  if hash dpkg-query 2>/dev/null; then
+    check_deps
+  fi
+
+  PIP_CHECK=$(python -c "import pip;from distutils.version import StrictVersion;print(pip.__version__ >= StrictVersion('10.0.0'))")
+  if [[ $PIP_CHECK == "True" ]]; then
+    echo -ne "Installed pip version($(pip -V | awk '{print $2}')) is greater than the required version(>8.1.0,<10.0.0). \n\n"
+    exit -1;
+  fi
+
+  rm -rf /etc/salt/ > /tmp/install_log 2>&1
+  print_progress_bar 10
+  if ! $(log_command pip install $SALT_WHL); then
+    echo -ne 'Installation error check logs below \n\n'
+    cat $ERR_LOG_FILE
+    exit -1;
+  fi
+  print_progress_bar 35
+  # Force tornado version until the version is fixed in slat requirements
+  if ! $(log_command pip install "tornado>=4.2.1,<5.0"); then
+      echo -ne 'Unable to install required tornado version. Aborting.. \n\n'
+      exit -1;
+  fi
+  print_progress_bar 35
+  install_salt_service
+  print_progress_bar 40
+  add_salt_config_and_keys
+  update_grains
+  print_progress_bar 45
+  print_progress_bar 50
+}
+
+function start_rapyuta_agent() {
+  ## Restart salt minion
+  log_command systemctl daemon-reload
+  log_command systemctl restart rapyuta-agent
+  log_command systemctl enable rapyuta-agent
+  systemctl status rapyuta-agent 1>> /dev/null 2>> /dev/null
+  if [ $? -ne 0 ] ; then
+    echo 'Unable to start the agent, check install logs at /tmp/rapyuta_install_log and error logs at /tmp/rapyuta_error_log'
+    exit -1;
+  fi
+}
+
+#Start
+run_as_sudoer
+if [[ $(check_init_manger systemd) == 0 ]]; then
+  echo -ne "This device doesn't support systemd \n\n"
+  exit -1;
+fi
+
+check_running_deployment
+
+while getopts :r:w: OPTION
+do
+  case $OPTION in
+    r)
+      RUNTIME=$OPTARG
+      ;;
+    w)
+      CATKIN_WS=$OPTARG
+      ;;
+  esac
+done
+
+case $RUNTIME in
+	dockercompose)
+		jobs+=("install_docker_runtime")
+        add_grains "runtime" $RUNTIME
+        add_rapyuta_image_token_in_grain
+		;;
+	preinstalled)
+		add_grains "runtime" $RUNTIME
+		;;
+	*)
+		echo "Invalid runtime"
+        exit -1
+		;;
+esac
+
+check_python_minimum_version
+set_ros_workspace
+
+echo -ne '\n'
+echo "Installing the Rapyuta Platform"
+echo -ne '\n'
+print_progress_bar 0
+run_jobs
+start_rapyuta_agent
+print_progress_bar 100
+echo -ne '\n'
+echo "Rapyuta Agent Installed! Install logs at /tmp/rapyuta_install_log and error logs at /tmp/rapyuta_error_log"
+ENDTIME="$(date -u +%s)"
+echo "Took $(($ENDTIME-$STARTTIME)) sec to complete" >> $INSTALL_LOG_FILE
