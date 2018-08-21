@@ -15,6 +15,6 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
     python-wheel \
     python-snappy
 
-COPY ros_entrypoint.sh .
+COPY ros_usb_cam/ros_entrypoint.sh .
 
 ENTRYPOINT ["/ros_entrypoint.sh"]
