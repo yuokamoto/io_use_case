@@ -66,7 +66,7 @@ class ImgUploader(object):
 		try:
 			save_img = rospy.ServiceProxy('/image_saver/save',  Empty)
 			save_img()
-			print 'Service_called'
+			rospy.loginfo('Service_called')
 		except rospy.ServiceException, e:
 			print "Service call failed: %s"%e
 
@@ -76,6 +76,8 @@ class ImgUploader(object):
 			
 			import os, io
 			rospy.loginfo(os.getcwd())
+			rospy.sleep(30)
+			rospy.loginfo(os.listdir('/'))
 			rospy.loginfo(os.listdir('/img'))
 
 			self.minioClient.fput_object('img', file_name, self._img_name)
