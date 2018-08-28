@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>usb_cam</name>
+  <version>0.0.1</version>
+  <description>Use usb camera</description>
+
+  <maintainer email="yu.okamoto@rapyuta-robotics.com">Yu Okamoto</maintainer>
+
+  <license>Commercial</license>
+
+  <depend>cv_camera</depend>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+</package>

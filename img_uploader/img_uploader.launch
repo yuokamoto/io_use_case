@@ -1,7 +1,7 @@
 <launch>
 	<arg name="img_upload_period"  default="$(optenv IMG_UPLOAD_PERIOD 600)"/>
 	<arg name="img_name"  default="$(optenv IMAGE_SAVE_DIRECTORY /img/)img_to_be_upload.png"/>
-	<arg name="server_ep"  default="$(optenv ep localhost:443)"/>
+	<arg name="server_ep"  default="$(optenv ep http://locaohost:443)"/>
 
 	<node name="img_uploader" pkg="img_uploader" type="img_uploader.py" output="screen">
 		<param name="img_name"           value="$(arg img_name)"/>
@@ -11,6 +11,6 @@
 	<node pkg="image_view" type="image_saver" name="image_saver" clear_params="true">
 	    <param name="filename_format" value="$(arg img_name)"/>
 	    <param name="save_all_image"  value="false"/>
-	    <remap from="image" to="usb_cam/image_raw" />
+	    <remap from="image" to="cv_camera/image_raw" />
     </node>
 </launch>
