@@ -18,4 +18,4 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
 
 COPY ros_entrypoint.sh .
 
-ENTRYPOINT ["/ros_entrypoint.sh"]
+ENTRYPOINT ["video_server/ros_entrypoint.sh"]
