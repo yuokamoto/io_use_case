@@ -1,7 +1,7 @@
 <launch>
 	<arg name="use_camera"  default="false"/>
 	<arg name="img_upload_period"  default="$(optenv IMG_UPLOAD_PERIOD 600)"/>
-	<arg name="img_name"  default="$(optenv IMAGE_SAVE_DIRECTORY /img/)img_to_be_upload.png"/>
+	<arg name="img_name"  default="$(optenv IMAGE_SAVE_DIRECTORY /tmp/)img_to_be_upload.png"/>
 	<arg name="server_ep"  default="$(optenv ep http://locaohost:443)"/>
 
 	<node name="img_uploader" pkg="img_uploader" type="img_uploader.py" output="screen">
