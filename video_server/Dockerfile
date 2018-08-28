@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
     python-pip \
     python-wheel \
     python-snappy \
-    sudo apt-get install ros-kinetic-web-video-server
+    ros-kinetic-web-video-server
 
 COPY ros_entrypoint.sh .
 
