@@ -16,6 +16,6 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
     python-snappy \
     ros-kinetic-web-video-server
 
-COPY ros_entrypoint.sh .
+COPY video_server/ros_entrypoint.sh .
 
-ENTRYPOINT ["video_server/ros_entrypoint.sh"]
+ENTRYPOINT ["ros_entrypoint.sh"]
