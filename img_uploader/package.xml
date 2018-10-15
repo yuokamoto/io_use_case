@@ -11,6 +11,9 @@
   <depend>rospy</depend>
   <depend>std_srvs</depend>
   <depend>sensor_msgs</depend>
+  <depend>image_view</depend>
+  <depend>cv_camera</depend>
+  <depend>web_video_server</depend>
 
   <buildtool_depend>catkin</buildtool_depend>
 
