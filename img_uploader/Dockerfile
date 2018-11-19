@@ -4,6 +4,7 @@ LABEL authors = "Yu Okamoto <yu.okamoto@rapyuta-robotics.com>"
 
 ENV ROS_HOME=/ros
 
+
 RUN apt-get update && apt-get install --no-install-recommends -y \
     git \
     ros-kinetic-rospy \
@@ -19,20 +20,17 @@ RUN pip install minio
 
 RUN mkdir /img
 
-ADD https://yuokamoto:e95fa0fce68dc3d077f5a2bbaba88e8e4fa4bfbc@api.github.com/repos/yuokamoto/io_use_case/git/refs/heads/master version.json
-RUN git clone https://yuokamoto:e95fa0fce68dc3d077f5a2bbaba88e8e4fa4bfbc@github.com/yuokamoto/io_use_case.git /ros/ws/src/io_use_case 
+RUN git clone https://github.com/yuokamoto/io_use_case.git /ros/ws/src 
 
 RUN /bin/bash -c "source /opt/ros/kinetic/setup.bash \
     && cd /ros/ws/src \
+    && rm CMakeLists.txt \
     && catkin_init_workspace\
     && cd /ros/ws \
     && rosdep update \
     && rosdep install --from-paths /ros/ws/src -y --ignore-src \
-    && catkin_make -DCATKIN_ENABLE_TESTING=False \
-    && mkdir -p /ros/log \
-    && chgrp -R root /ros \
-    && chmod -R g+rwx /ros"
+    && catkin_make -DCATKIN_ENABLE_TESTING=False"
 
-COPY img_uploader/ros_entrypoint.sh .
+RUN cp /ros/ws/src/img_uploader/ros_entrypoint.sh .
 
 ENTRYPOINT ["/ros_entrypoint.sh"]
