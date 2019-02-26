@@ -1,0 +1,3 @@
+<launch>
+	<node name="talker_sensor" pkg="talker_sensor" type="talker_sensor.py" output="screen"/>
+</launch>
