@@ -1,3 +1,0 @@
-<launch>
-	<node name="cv_camera" pkg="cv_camera" type="cv_camera_node" respawn="true" />
-</launch>
